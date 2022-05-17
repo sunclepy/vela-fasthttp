@@ -1,55 +1,45 @@
 # vela-fasthttp
 主要是用的web和lua的开发框架 可以灵活的处理业务 利用lua的热更新和加载的原理
 
-## SETUP启动配置
-启动配置一般包含启动配置
+## proc = web.new{conf}
+- 按照配置文件启动一个web服务
+- 返回对象是一个proc data object
+
+### 字段
+- name
+- bind
+- keepalive
+- reuseport
+- output
+
+### 函数
+- vhost(hostname , cfg)
+- start()
+- format(codec , string)
+- addr(string)
+- to(lua.write)
+
+### 样例
 ```lua
     local http = web.new{
-    
         -- proc 服务名称 
         name = "demo_web", 
-    
-        -- network
-        network = "tcp", --监听的协议
-    
         -- 监听端口
-        listen  = "0.0.0.0:9090", --监听的端口
-   
-        -- 日志格式 , 关闭：off 
-        access_format = "time,server_addr,server_port,remote_addr,host,path,query,ua,referer,status,content-lenght,region_info,http_risk",
-    
-        -- 日志的格式 
-        access_encode = "json",
-    
-        -- 记录IP的位置信息
-        access_region = "x-real-ip",
-    
-        -- 路由查找路径,如:www.a.com.lua , 通过主机头查找
-        routers = "resource/web/server.d",
-    
-        -- uri handle处理逻辑 可以匿名或者公共库查找, 这里就是公共库
-        handler = "resource/web/handle.d",
-    
+        bind = "tcp://0.0.0.0:9090?keepalive=on&read_timeout=100&idle_timeout=100", --监听的端口
         -- 默认没有发现的放回结果 
         not_found = "not_found",
-        
-        -- 位置处理SDK
-        -- region = vela.region{},
-
-        -- 日志文件输出SDK
-        -- output = vela.file{},
     }
 
-    start(http)
+    local r = http.vhost("x.vela.com" , {})
+    r.GET("/aa" , web.handle"xxxxxxx")
+    r.GET("/cc" , function() end)
+
+    http.start() 
 ```
 
-## router配置
-利用的web的router路由逻辑，完成默认路由的注入 ， 利用web的快速匹配模式完成路由查找
-下面是www.a.com的主机的配置,文件路径:resource/web/server.d/www.a.com.lua
-注意: SETUP 中的routers配置目录下
-### web.router{}
-新建一个router对象
-- 2021-07-06 新增interceptor对象
+## web.router{cfg} 
+- 利用的web的router路由逻辑，完成默认路由的注入 ， 利用web的快速匹配模式完成路由查找
+- 下面是www.a.com的主机的配置,文件路径:resource/web/server.d/www.a.com.lua
 
 ```lua
     local r = web.router{
@@ -428,6 +418,8 @@ handle 下面调用方式
     
     --直接注入匿名函数
     r.GET("/get/useinfo" , function() end)
+
+    r.GET("/get/useinfo" , web.handle'${app}')
 
     --文件路径
     r.FILE("/static/{filepath:*}" , "share/www/html")

@@ -2,6 +2,7 @@ package fasthttp
 
 import (
 	"errors"
+	"github.com/vela-security/vela-public/auxlib"
 	"github.com/vela-security/vela-public/lua"
 	"os"
 )
@@ -13,18 +14,15 @@ var (
 
 type config struct {
 	//基础配置
-	name        string
-	listen      string
-	network     string
-	router      string
-	handler     string
-	keepalive   string
-	reuseport   string
-	daemon      string
-	region      string
-	notFound    string
-	readTimeout int
-	idleTimeout int
+	name      string
+	bind      auxlib.URL // tcp://0.0.0.0:9090?read_timeout=100&idle_timeout=100
+	router    string
+	handler   string
+	keepalive string
+	reuseport string
+	daemon    string
+	region    string
+	notFound  string
 
 	//下面对象配置
 	fd     *os.File
@@ -40,11 +38,9 @@ func newConfig(L *lua.LState) *config {
 	cnn.pretreatment(defaultAccessJsonFormat)
 
 	cfg := &config{
-		readTimeout: 10,
-		idleTimeout: 10,
-		router:      xEnv.Prefix() + "/www/vhost",
-		handler:     xEnv.Prefix() + "/www/handle",
-		access:      cnn.Line,
+		router:  xEnv.Prefix() + "/www/vhost",
+		handler: xEnv.Prefix() + "/www/handle",
+		access:  cnn.Line,
 	}
 
 	tab.Range(func(key string, val lua.LValue) {
@@ -53,21 +49,12 @@ func newConfig(L *lua.LState) *config {
 			cfg.name = val.String()
 		case "daemon":
 			cfg.daemon = val.String()
-		case "listen":
-			cfg.listen = val.String()
-		case "network":
-			cfg.network = val.String()
 		case "reuseport":
 			cfg.reuseport = val.String()
 		case "keepalive":
 			cfg.keepalive = val.String()
-
-		case "read_timeout":
-			cfg.readTimeout = lua.IsInt(val)
-
-		case "idle_timeout":
-			cfg.idleTimeout = lua.IsInt(val)
-
+		case "bind":
+			cfg.bind = auxlib.CheckURL(val, L)
 		case "output":
 			cfg.output = checkOutputSdk(L, val)
 

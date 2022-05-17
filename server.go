@@ -63,9 +63,9 @@ func (fss *server) Close() error {
 
 func (fss *server) Listen() (net.Listener, error) {
 	if fss.cfg.reuseport == "on" {
-		return reuseport.Listen(fss.cfg.network, fss.cfg.listen)
+		return reuseport.Listen(fss.cfg.bind.Scheme(), fss.cfg.bind.Host())
 	}
-	return net.Listen(fss.cfg.network, fss.cfg.listen)
+	return net.Listen(fss.cfg.bind.Scheme(), fss.cfg.bind.Host())
 }
 
 func (fss *server) keepalive() bool {
@@ -234,8 +234,8 @@ func (fss *server) Start() error {
 	fss.fs = &fasthttp.Server{
 		Handler:         fss.Handler,
 		TCPKeepalive:    fss.keepalive(),
-		ReadTimeout:     time.Duration(fss.cfg.readTimeout) * time.Second,
-		IdleTimeout:     time.Duration(fss.cfg.idleTimeout) * time.Second,
+		ReadTimeout:     time.Duration(fss.cfg.bind.Int("read_timeout")) * time.Second,
+		IdleTimeout:     time.Duration(fss.cfg.bind.Int("idle_timeout")) * time.Second,
 		CloseOnShutdown: true,
 	}
 	fss.ln = ln

@@ -14,14 +14,10 @@ func (fss *server) Header(out lua.Console) {
 func (fss *server) Show(out lua.Console) {
 	fss.Header(out)
 	out.Printf("name  = %s", fss.Name())
-	out.Printf("network = %s", fss.cfg.network)
-	out.Printf("listen = %s", fss.cfg.listen)
+	out.Printf("bind = %s", fss.cfg.bind.String())
 	out.Printf("routers = %s", fss.cfg.router)
 	out.Printf("handler = %s", fss.cfg.handler)
 	out.Printf("not_found = %s", fss.cfg.notFound)
-	out.Printf("reuseport = %s", fss.cfg.reuseport)
-	out.Printf("keepalive = %s", fss.cfg.keepalive)
-	out.Printf("read_timetout = %d", fss.cfg.readTimeout)
 	out.Printf("output = %s", fss.cfg.output.Name())
 }
 
