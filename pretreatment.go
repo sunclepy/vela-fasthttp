@@ -74,6 +74,7 @@ func (cnn *conversion) pretreatment(data string) {
 func (cnn *conversion) Response(ctx *RequestCtx) {
 	n := len(cnn.handle)
 	if n == 0 {
+		ctx.Response.SetBody(cnn.raw)
 		return
 	}
 
