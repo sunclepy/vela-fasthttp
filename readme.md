@@ -1,33 +1,47 @@
-#m vela-fasthttp
-主要是用的web和lua的开发框架 可以灵活的处理业务 利用lua的热更新和加载的原理
+# WEB服务
+> 主要是用的web和lua的开发框架 可以灵活的处理业务 利用lua的热更新和加载的原理
 
-## proc = web.new{conf}
-- 按照配置文件启动一个web服务
-- 返回对象是一个proc data object
+## 用法说明
+> 没启动一个web服务器 必须要定义他的router逻辑和handle的逻辑 可以直接定义也可以从外部文件导入
 
-### 字段
+## 内置方法
+- [web(cfg)](#web服务) &emsp;获取web服务
+- [web.vhost](#vhost) &emsp;生成主机名配置
+- [web.context](#context),[web.ctx](#context) &emsp;请求变量
+- [web.handle](#handle),[web.h](#handle) &emsp;请求处理函数
+- [web.router](#router),[web.r](#router) &emsp;添加路由
+
+## web服务
+> http = web(cfg) <br />
+> 配置:配置文件 返回:[http任务对象](#)
+
+配置信息:
 - name
-- bind
+- bind &emsp; tcp://127.0.0.1:9090
 - keepalive
 - reuseport
-- output
+- output &emsp;日志输出
+>
 
-### 函数
-- vhost(hostname , cfg)
-- start()
-- format(codec , string)
-- addr(string)
-- to(lua.write)
+内置函数:
+- [http.vhost(hostname , router)](#) &emsp;绑定主机名[router](#router)
+- [http.format(codec , string)](#) &emsp;日志输出格式
+- [http.addr(string)}](#) &emsp;设置全局IP地址获取字段默认:remote_addr
+- [http.to(lua.write)](#) &emsp;output数据输出
+- [http.default(string , [handle](#handle))](#) &emsp;设置默认的处理逻辑
+- [http.start()](#)
 
-### 样例
+内置router:
+- http.r &emsp;默认的[router](#router)
+>
+
 ```lua
-    local http = web.new{
+    local http = web{
         -- proc 服务名称 
         name = "demo_web", 
         -- 监听端口
-        bind = "tcp://0.0.0.0:9090?keepalive=on&read_timeout=100&idle_timeout=100", --监听的端口
-        -- 默认没有发现的放回结果 
-        not_found = "not_found",
+        bind = "tcp://0.0.0.0:9090?read_timeout=100&idle_timeout=100", --监听的端口
+        keepalive = "on"
     }
 
     local r = http.vhost("x.vela.com" , {})
@@ -37,9 +51,30 @@
     http.start() 
 ```
 
-## web.router{cfg} 
-- 利用的web的router路由逻辑，完成默认路由的注入 ， 利用web的快速匹配模式完成路由查找
-- 下面是www.a.com的主机的配置,文件路径:resource/web/server.d/www.a.com.lua
+## router
+> r = web.router(cfg) 或者 r = web.r(cfg) <br />
+> 利用的web的router路由逻辑，完成默认路由的注入 ， 利用web的快速匹配模式完成路由查找 <br />
+> 下面是www.a.com的主机的配置,文件路径:www.a.com.lua
+
+内置方法:
+
+- [router.GET](#)
+- [router.HEAD](#)
+- [router.POST](#)
+- [router.PUT](#)
+- [router.PATCH](#)
+- [router.DELETE](#)
+- [router.CONNECT](#)
+- [router.OPTIONS](#)
+- [router.TRACE](#)
+- [router.POST](#)
+- [router.ANY](#) &emsp;忽略发方法名注意: router.ANY("*" , web.handle...)
+- [router.default](#) &emsp; 没有命中HTTP请求后转发的路径
+- [router.not_found](#) &emsp;等同default
+
+> 语法:  r.METHOD(path string , web.handle ... ) <br />
+> 参数 path： 代表路径的 完全兼容 web.router的路径语法 如:/api/{name}/{val:*} <br />
+> 参数 handle: 就是用web.handle构造的对象
 
 ```lua
     local r = web.router{
@@ -63,18 +98,18 @@
 }
 ```
 
-完整的例子 
+完整的例子
 ```lua
 local ctx = web.context-- 用户请求周期变量
 local json = vela.json
 local function auth() 
     local u = json.decode(ctx.body_raw)
     if u.name == "admin" and u.pass == "123654" then
-        ctx.say(json.encode({code=200 , message= u.name .. "login success"}))
+        ctx.say(json.encode({code=200 , body = u.name .. "login success"}))
         ctx.exit(200) 
         return
     end
-    ctx.say(json.encode({code=200 , message= "login fail"}))
+    ctx.say(json.encode({code=200 , body = "login fail"}))
     ctx.exit(200)
 end
 
@@ -83,11 +118,7 @@ r.POST("/login" , auth) --注册路由
 r.GET("/info" , 
     web.handle{
         code = 200,
-        filter = web.filter{
-           "$host == www.a.com,www.b.com,www.c.com",
-           "$uri == /info"
-        },
-        
+        filter = { "host = www.a.com,www.c.com" , "uri = /info" },
         header = web.header{
             ['server'] = "vela-web-test-v1.0", 
         },
@@ -101,48 +132,33 @@ r.GET("/info" ,
     "defaut_handle" --这个是查找公共库下的handle处理逻辑 ,一般为default_handle.lua
 )
 ```
-### 函数说明 
-#### 1.路由配置
-- router.GET
-- router.HEAD
-- router.POST
-- router.PUT
-- router.PATCH
-- router.DELETE
-- router.CONNECT
-- router.OPTIONS
-- router.TRACE
-- router.POST
-- router.ANY 忽略发方法名 , 注意: router.ANY("*" , web.handle...)
-  
-- 语法:  r.METHOD(path string , web.handle ... )
-- 参数 path： 代表路径的 完全兼容 web.router的路径语法 如:/api/{name}/{val:*}
-- 参数 handle: 就是用web.handle构造的对象
 
-#### 2. ctx周期变量的使用
+## context
+> web服务context的http请求逻辑
+
 - ctx.say
-- ctx.say_json
 - ctx.json
-- ctx.file
-- ctx.raw
-- ctx.redirect
-- ctx.append
-- ctx.req_header
-- ctx.resp_header
-- ctx.try
-- ctx.bind
+- ctx.file(filepath)
+- ctx.raw(string...)
+- ctx.redirect(url , [code](#))&emsp;跳转状态默认302
+- ctx.append(string) &emsp;追加返回内容
+- ctx.req_header, ctx.rqh &emsp;设置请求头
+- ctx.resp_header, ctx.rph &emsp;设置返回头
+- ctx.try(v...) &emsp;检测值是否为空
+- ctx.bind(codec) &emsp;自动解码请求格式支持:json和file
+- ctx.clone() &emsp;克隆远程地址
 
-- web.context.say_json
-自动encode obj 对象 并且发送JSON对象 , obj 需要满足是userdata anydata 且满足ToJson 接口
+- web.context.json
+  自动encode obj 对象 并且发送JSON对象 , obj 需要满足是userdata anydata 且满足ToJson 接口
 ```lua
     local ctx = web.context
-    ctx.say_json(obj)
+    ctx.json(obj)
 ```
-- web.context.bind_json
-自动绑定请求参数 如果异常会自动退出请求
+- web.context.bind
+  自动绑定请求参数 如果异常会自动退出请求
 ```lua
     local ctx = web.context
-    local v = ctx.bind_json()
+    local v = ctx.bind()
     ctx.say(v.int("id"))
     ctx.say(v.str("name"))
     ctx.say(v.bool("enable"))
@@ -157,7 +173,7 @@ r.GET("/info" ,
         ctx.say("helo")
     end)
 ```
-- web.context.append(string...) 
+- web.context.append(string...)
 ```lua
     local ctx = web.context
     local r = web.router()
@@ -166,7 +182,7 @@ r.GET("/info" ,
         ctx.append(" vela-go")
     end)
 ```
-- web.context.exit(int) 
+- web.context.exit(int)
 ```lua
     local ctx = web.context
     local r = web.router()
@@ -176,7 +192,8 @@ r.GET("/info" ,
         ctx.exit(200)
     end)
 ```
-- web.context.set_header(name1 , value1 , name2, value2,name3 , value3)
+- web.context.resp_header(name1 , value1 , name2, value2,name3 , value3)
+- web.context.rph(name1 , value1 , name2 , value2)
 ```lua
   local ctx = web.context
   local r = web.router()
@@ -225,6 +242,7 @@ r.GET("/info" ,
 - web.context.param_*
 - 作用： 读取路由中的param
 - 语法： web.context.param_name , web.context.param_val
+
 ```lua
  -- http://www.a.com/api/admin/123456
  -- 路由 r.GET("/api/{name}/{val:*}
@@ -388,39 +406,43 @@ r.GET("/info" ,
     local sent = web.context.sent
 ```
 
-#### 3.handle配置
-主要的业务处理逻辑 绑定之前注册路由
+- web.context.clone
+- 作用： clone线上服务器的内容
+```lua
+  local ctx = web.ctx
+  r.GET("/baidu" , ctx.clone("https://www.baidu.com"))
+```
+
+## handle
+>主要的业务处理逻辑 绑定之前注册路由 可以是下面的三种模式 <br />
+> template: 直接采用模板渲染的方式: ${host} 变量 满足context的接口
+> function: 函数处理模式 利用内置的context 和 ctx 逻辑
+> handler: 模式,采用提前处理定义好的数据和返回模式
+> clone: clone线上服务器的链接信息 web.clone("https://wwww.baidu.com")
+> redirect: 重定向服务器web.redirect("https://www.baidu.com" , 302)
+
 ```lua
     local ctx = web.context
-    web.handle{
-        -- 新建过滤条件
-        filter = web.filter{ 
-           "$host == www.a.com,www.b.com", 
-           "$uri == /123"
-        },
-    
-        -- 返回状态码
-        code = 200, 
-        header = {
-            ["content-length"] = 100,
-            ["server"] = "hacker"
-        },
-    
-        -- 返回值 
-        -- 中间可以带有动态内容如：${uri} ${param_name}
-        body = "hello ${uri} ${param_name}",
-        
-        -- body 可以直接是function
-        body = function()
-            
-        end,
+    local h = web.handle
+    r.GET("/template" , h'${host} allow by ${uri}')
 
-        -- 关闭 路由些其他handle的处理
-        eof = true, 
-    }
+    r.GET("/function" , function() 
+      ctx.say(vela.format("%s allow by %s" , ctx.host , ctx.uri)) 
+      ctx.exit(200)
+    end)
+
+    r.GET("/handle" , h{
+      code = 200,
+      body = "${host} allow by handle",
+      eof  = false, --继续往下匹配
+    }, h{
+      code = 200,
+      body = "${host} allow by handle",
+      eof  = true,
+    })
+
 ```
-#### 4.handle 说明
-handle 下面调用方式
+handle 下面调用方式:
 ```lua
     -- 注册路由的时候直接创建
     r.GET("/123" , web.handle{ })
@@ -442,9 +464,10 @@ handle 下面调用方式
     end)
 ```
 
-#### 5.handle 库定义
-handle库的定义，一般是文件名调用 查找路径 setup 中的 handler
-例如下图中的handle
+- 定义库文件
+- handle库的定义，一般是文件名调用中的handler
+- 如下中handle
+
 ```lua
     return web.handle{ --记得一定要return 不然无法获取
         code = 200,
