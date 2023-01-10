@@ -1,18 +1,25 @@
 package fasthttp
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"github.com/vela-security/vela-public/assert"
+	"github.com/vela-security/vela-public/auxlib"
 	"github.com/vela-security/vela-public/kind"
 	"github.com/vela-security/vela-public/lua"
 	"net"
+	"net/http"
 	"strings"
+	"time"
 )
 
 type fsContext struct {
+	sayRaw  *lua.LFunction
 	sayJson *lua.LFunction
+	sayFile *lua.LFunction
 	say     *lua.LFunction
+	format  *lua.LFunction
 	append  *lua.LFunction
 	exit    *lua.LFunction
 	eof     *lua.LFunction
@@ -21,6 +28,7 @@ type fsContext struct {
 	rqh     *lua.LFunction
 	try     *lua.LFunction
 	bind    *lua.LFunction
+	clone   *lua.LFunction
 
 	//meta lua.UserKV
 }
@@ -35,8 +43,11 @@ func (fsc *fsContext) Peek() lua.LValue                       { return fsc }
 func newContext() *fsContext {
 	return &fsContext{
 		sayJson: lua.NewFunction(sayJsonL),
+		sayRaw:  lua.NewFunction(sayRawL),
+		sayFile: lua.NewFunction(sayFileL),
 		append:  lua.NewFunction(appendL),
 		say:     lua.NewFunction(fsSay),
+		format:  lua.NewFunction(fsFormat),
 		exit:    lua.NewFunction(exitL),
 		eof:     lua.NewFunction(eofL),
 		rdt:     lua.NewFunction(fsRedirect),
@@ -44,6 +55,7 @@ func newContext() *fsContext {
 		rqh:     lua.NewFunction(rqhL),
 		try:     lua.NewFunction(tryL),
 		bind:    lua.NewFunction(luaBodyBind),
+		clone:   lua.NewFunction(cloneL),
 	}
 }
 
@@ -53,6 +65,17 @@ func xPort(addr net.Addr) int {
 		return 0
 	}
 	return x.Port
+}
+
+func addr(ctx *RequestCtx) string {
+	uv := ctx.UserValue(usr_addr_key)
+
+	ip, ok := uv.(string)
+	if ok {
+		return ip
+	}
+
+	return ctx.RemoteIP().String()
 }
 
 func regionCityId(ctx *RequestCtx) int {
@@ -70,7 +93,7 @@ func regionRaw(ctx *RequestCtx) []byte {
 		return byteNull
 	}
 
-	v, ok := uv.(assert.IPv4Info)
+	v, ok := uv.(*assert.IPv4Info)
 	if ok {
 		return v.Byte()
 	}
@@ -85,12 +108,24 @@ func fsSay(co *lua.LState) int {
 	}
 
 	ctx := checkRequestCtx(co)
-	data := make([]string, n)
+	var buf bytes.Buffer
+
 	for i := 1; i <= n; i++ {
-		data[i-1] = co.CheckString(i)
+		buf.WriteString(co.CheckString(i))
 	}
-	ctx.Response.SetBodyString(strings.Join(data,
-		""))
+	ctx.Response.SetBodyRaw(buf.Bytes())
+	return 0
+}
+
+func fsFormat(co *lua.LState) int {
+	n := co.GetTop()
+	if n == 0 {
+		return 0
+	}
+
+	ctx := checkRequestCtx(co)
+	body := auxlib.Format(co, 0)
+	ctx.Response.SetBodyRaw(lua.S2B(body))
 	return 0
 }
 
@@ -108,6 +143,28 @@ func sayJsonL(co *lua.LState) int {
 	}
 
 	ctx.SetBody(chunk)
+	return 0
+}
+
+func sayRawL(co *lua.LState) int {
+	n := co.GetTop()
+	if n == 0 {
+		return 0
+	}
+
+	ctx := checkRequestCtx(co)
+	var buf bytes.Buffer
+	for i := 1; i <= n; i++ {
+		buf.Write(lua.S2B(co.CheckString(i)))
+	}
+	ctx.Response.SetBodyRaw(buf.Bytes())
+	return 0
+}
+
+func sayFileL(co *lua.LState) int {
+	ctx := checkRequestCtx(co)
+	path := co.CheckString(1)
+	ctx.SendFile(path)
 	return 0
 }
 
@@ -137,6 +194,28 @@ func exitL(co *lua.LState) int {
 func eofL(co *lua.LState) int {
 	ctx := checkRequestCtx(co)
 	ctx.SetUserValue(eof_uv_key, true)
+	return 0
+}
+
+func cloneL(co *lua.LState) int {
+	ctx := checkRequestCtx(co)
+	url := co.CheckString(1)
+
+	rsp, err := http.Get(url)
+	if err != nil {
+		ctx.SetStatusCode(http.StatusInternalServerError)
+		ctx.SetBodyString("clone fail")
+		return 0
+	}
+
+	for key, val := range rsp.Header {
+		for _, iv := range val {
+			ctx.Response.Header.Set(key, iv)
+		}
+	}
+
+	size := rsp.ContentLength
+	ctx.SetBodyStream(rsp.Body, int(size))
 	return 0
 }
 
@@ -189,7 +268,8 @@ func k2v(ctx *RequestCtx, key string) lua.LValue {
 	//主机头
 	case "host":
 		return lua.B2L(ctx.Host())
-
+	case "addr":
+		return lua.S2L(addr(ctx))
 	case "scheme":
 		return lua.B2L(ctx.URI().Scheme())
 
@@ -213,7 +293,7 @@ func k2v(ctx *RequestCtx, key string) lua.LValue {
 		return lua.LInt(xPort(ctx.LocalAddr()))
 
 	case "time":
-		return lua.S2L(ctx.Time().Format("2006-01-02 13:04:05.00"))
+		return lua.S2L(time.Now().Format("2006-01-02 13:04:05.00"))
 
 	//请求信息
 	case "uri":
@@ -243,13 +323,12 @@ func k2v(ctx *RequestCtx, key string) lua.LValue {
 		return lua.LInt(ctx.Response.StatusCode())
 	case "sent":
 		return lua.LInt(ctx.Response.Header.ContentLength())
-
 	//返回完整的数据
 	case "region_raw":
 		return lua.B2L(regionRaw(ctx))
-	case "header_raw":
+	case "header_raw", "header":
 		return lua.B2L(ctx.Request.Header.RawHeaders())
-	case "cookie_raw":
+	case "cookie_raw", "cookie":
 		return lua.B2L(ctx.Request.Header.Peek("cookie"))
 	case "body_raw":
 		return lua.B2L(ctx.Request.Body())
@@ -319,6 +398,16 @@ func k2v(ctx *RequestCtx, key string) lua.LValue {
 		}
 	}
 
+	uv := ctx.UserValue(key)
+	if uv == nil {
+		return lua.LNil
+	}
+
+	val, ok := uv.(string)
+	if ok {
+		return lua.S2L(val)
+	}
+
 	return lua.LNil
 }
 
@@ -327,12 +416,13 @@ func luaBodyBind(L *lua.LState) int {
 	tn := L.CheckString(1)
 	switch tn {
 	case "json":
-		obj, err := kind.NewFastJson(ctx.Request.Body())
+		fast := &kind.Fast{}
+		err := fast.ParseBytes(ctx.Request.Body())
 		if err != nil {
 			L.RaiseError("invalid json body")
 			return 0
 		}
-		L.Push(L.NewAnyData(obj))
+		L.Push(fast)
 		return 1
 
 	case "file":

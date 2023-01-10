@@ -1,4 +1,4 @@
-# vela-fasthttp
+#m vela-fasthttp
 主要是用的web和lua的开发框架 可以灵活的处理业务 利用lua的热更新和加载的原理
 
 ## proc = web.new{conf}
@@ -120,6 +120,18 @@ r.GET("/info" ,
 - 参数 handle: 就是用web.handle构造的对象
 
 #### 2. ctx周期变量的使用
+- ctx.say
+- ctx.say_json
+- ctx.json
+- ctx.file
+- ctx.raw
+- ctx.redirect
+- ctx.append
+- ctx.req_header
+- ctx.resp_header
+- ctx.try
+- ctx.bind
+
 - web.context.say_json
 自动encode obj 对象 并且发送JSON对象 , obj 需要满足是userdata anydata 且满足ToJson 接口
 ```lua

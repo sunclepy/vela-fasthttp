@@ -1,6 +1,8 @@
 package fasthttp
 
 import (
+	"github.com/vela-security/vela-public/auxlib"
+	"github.com/vela-security/vela-public/kind"
 	"github.com/vela-security/vela-public/lua"
 	"os"
 )
@@ -34,6 +36,11 @@ func (fss *server) formatL(L *lua.LState) int {
 		return 0
 	}
 
+	if codec == "dict" {
+		fss.cfg.access = PrepareDictJson(L)
+		return 0
+	}
+
 	data := L.CheckString(2)
 	fss.cfg.access = compileAccessFormat(codec, data)
 	return 0
@@ -45,7 +52,8 @@ func (fss *server) addrL(L *lua.LState) int {
 }
 
 func (fss *server) notFoundL(L *lua.LState) int {
-	fss.cfg.notFound = L.CheckString(1)
+	fss.cfg.notFound = checkHandleChains(L, 1)
+	//fss.cfg.notFound = L.CheckString(1)
 	return 0
 }
 
@@ -79,6 +87,43 @@ func (fss *server) startL(L *lua.LState) int {
 	return 0
 }
 
+func (fss *server) dictL(L *lua.LState) int {
+	n := L.GetTop()
+	if n == 0 {
+		return 0
+	}
+
+	var fileds []string
+
+	for i := 2; i <= n; i++ {
+		fileds = append(fileds, L.CheckString(i))
+	}
+
+	fss.cfg.access = func(ctx *RequestCtx) []byte {
+		enc := kind.NewJsonEncoder()
+		enc.Tab("")
+		for _, key := range fileds {
+			enc.KV(key, k2v(ctx, key).String())
+		}
+		enc.End("}")
+		return enc.Bytes()
+	}
+
+	return 0
+}
+
+func (fss *server) varL(L *lua.LState) int {
+	L.Callback(func(val lua.LValue) (stop bool) {
+		k, v := auxlib.ParamLValue(val.String())
+		if v == nil {
+			return true
+		}
+		fss.cfg.variables[k] = v.String()
+		return
+	})
+	return 0
+}
+
 func (fss *server) Index(L *lua.LState, key string) lua.LValue {
 	switch key {
 	case "vhost":
@@ -87,10 +132,19 @@ func (fss *server) Index(L *lua.LState, key string) lua.LValue {
 		return L.NewFunction(fss.startL)
 	case "format":
 		return L.NewFunction(fss.formatL)
+	case "dict":
+		return L.NewFunction(fss.dictL)
+	case "format_map":
+		return L.NewFunction(fss.formatL)
 	case "addr":
 		return L.NewFunction(fss.addrL)
 	case "to":
 		return L.NewFunction(fss.outputL)
+	case "var":
+		return lua.NewFunction(fss.varL)
+
+	case "r":
+		return fss.cfg.r
 
 	case "default":
 		return L.NewFunction(fss.notFoundL)

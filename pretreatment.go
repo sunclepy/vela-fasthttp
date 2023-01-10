@@ -8,7 +8,7 @@ import (
 	"regexp"
 )
 
-//"hello ${aa} pp ccc dd ee ff "
+// "hello ${aa} pp ccc dd ee ff "
 var reg = regexp.MustCompile(`\${([a-zA-Z0-9_]{2,})}`)
 
 type conversion struct {
@@ -74,7 +74,7 @@ func (cnn *conversion) pretreatment(data string) {
 func (cnn *conversion) Response(ctx *RequestCtx) {
 	n := len(cnn.handle)
 	if n == 0 {
-		ctx.Response.SetBody(cnn.raw)
+		ctx.Response.SetBodyRaw(cnn.raw)
 		return
 	}
 
@@ -82,6 +82,26 @@ func (cnn *conversion) Response(ctx *RequestCtx) {
 		fn := cnn.handle[i]
 		ctx.Response.AppendBody(fn(ctx))
 	}
+}
+
+func (cnn *conversion) Map(ctx *RequestCtx) []byte {
+	buff := kind.NewJsonEncoder()
+	n := len(cnn.handle)
+	buff.Tab("")
+	if n == 0 {
+		buff.Write(cnn.raw)
+		buff.End("]")
+		return buff.Bytes()
+	}
+
+	for i := 0; i < n; i++ {
+		fn := cnn.handle[i]
+		buff.Insert(fn(ctx))
+		buff.Char(',')
+	}
+
+	buff.End("]")
+	return buff.Bytes()
 }
 
 func (cnn *conversion) Json(ctx *RequestCtx) []byte {

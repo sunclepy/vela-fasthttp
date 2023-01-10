@@ -22,13 +22,16 @@ type config struct {
 	reuseport string
 	daemon    string
 	region    string
-	notFound  string
+	notFound  *HandleChains
+	variables map[string]string
 
 	//下面对象配置
 	fd     *os.File
 	output lua.Writer
 	access func(*RequestCtx) []byte
 
+	r     *vRouter
+	co    *lua.LState
 	debug bool
 }
 
@@ -38,9 +41,12 @@ func newConfig(L *lua.LState) *config {
 	cnn.pretreatment(defaultAccessJsonFormat)
 
 	cfg := &config{
-		router:  xEnv.Prefix() + "/www/vhost",
-		handler: xEnv.Prefix() + "/www/handle",
-		access:  cnn.Line,
+		router:    xEnv.Prefix() + "/www/vhost",
+		handler:   xEnv.Prefix() + "/www/handle",
+		access:    cnn.Line,
+		r:         newRouter(L, lua.LNil),
+		co:        xEnv.Clone(L),
+		variables: make(map[string]string),
 	}
 
 	tab.Range(func(key string, val lua.LValue) {

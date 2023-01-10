@@ -3,6 +3,7 @@ package fasthttp
 import (
 	"fmt"
 	"github.com/valyala/fasthttp"
+	"github.com/vela-security/vela-public/auxlib"
 	"github.com/vela-security/vela-public/lua"
 )
 
@@ -91,20 +92,34 @@ func (r *vRouter) call(co *lua.LState, hook *lua.LFunction) {
 	}
 }
 
+func (r *vRouter) varL(L *lua.LState) int {
+	L.Callback(func(val lua.LValue) (stop bool) {
+		k, v := auxlib.ParamLValue(val.String())
+		if v == nil {
+			return true
+		}
+		r.variables[k] = v.String()
+		return
+	})
+	return 0
+}
+
 func (r *vRouter) Index(L *lua.LState, key string) lua.LValue {
 	switch key {
 	case "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "CONNECT", "OPTIONS", "TRACE":
 		return r.handleIndexFn(L, key)
 
-	case "FILE":
+	case "FILE", "file":
 		return r.fileIndexFn(L)
 
-	case "ANY":
+	case "ANY", "any":
 		return r.anyIndexFn(L)
 
-	case "not_found":
+	case "not_found", "default":
 		return r.notFoundIndexFn(L)
 
+	case "var":
+		return lua.NewFunction(r.varL)
 	case "addr":
 		return lua.NewFunction(r.addrL)
 
@@ -146,6 +161,11 @@ func (r *vRouter) addrL(L *lua.LState) int {
 
 func (r *vRouter) formatL(L *lua.LState) int {
 	codec := L.CheckString(1)
+	if codec == "dict" {
+		r.access = PrepareDictJson(L)
+		return 0
+	}
+
 	data := L.CheckString(2)
 	r.access = compileAccessFormat(codec, data)
 	return 1

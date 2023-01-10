@@ -2,6 +2,7 @@ package fasthttp
 
 import (
 	"github.com/vela-security/vela-public/assert"
+	"github.com/vela-security/vela-public/export"
 	"github.com/vela-security/vela-public/lua"
 )
 
@@ -20,15 +21,21 @@ func newLuaServer(L *lua.LState) int {
 
 func WithEnv(env assert.Environment) {
 	xEnv = env
+	kv := lua.NewUserKV()
+	ctx := newContext()
+	kv.Set("context", ctx)
+	kv.Set("ctx", ctx)
+	kv.Set("h", lua.NewFunction(newLuaHandle))
+	kv.Set("handle", lua.NewFunction(newLuaHandle))
+	kv.Set("router", lua.NewFunction(newLuaRouter))
+	kv.Set("header", lua.NewFunction(newLuaHeader))
+	kv.Set("clone", lua.NewFunction(newLuaCloneL))
+	kv.Set("redirect", lua.NewFunction(newLuaRedirectL))
+	kv.Set("H", lua.NewFunction(newLuaHeader))
+	kv.Set("vhost", lua.NewFunction(newLuaHost))
 
-	fs := lua.NewUserKV()
-	fs.Set("context", newContext())
-	fs.Set("new", lua.NewFunction(newLuaServer))
-	fs.Set("h", lua.NewFunction(newLuaHandle))
-	fs.Set("handle", lua.NewFunction(newLuaHandle))
-	fs.Set("router", lua.NewFunction(newLuaRouter))
-	fs.Set("filter", lua.NewFunction(newLuaFilter))
-	fs.Set("header", lua.NewFunction(newLuaHeader))
-	fs.Set("vhost", lua.NewFunction(newLuaHost))
-	env.Global("web", fs)
+	env.Global("web",
+		export.New("vela.web.export",
+			export.WithTable(kv),
+			export.WithFunc(newLuaServer)))
 }

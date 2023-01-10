@@ -24,6 +24,7 @@ type vRouter struct {
 	access    func(ctx *RequestCtx) []byte
 	region    string
 	output    lua.Writer
+	variables map[string]string
 
 	//handler处理脚本路径
 	handler string
@@ -87,7 +88,7 @@ func newRouter(co *lua.LState, tab lua.LValue) *vRouter {
 	r := router.New()
 	r.PanicHandler = panicHandler
 
-	v := &vRouter{r: r}
+	v := &vRouter{r: r, variables: map[string]string{}}
 
 	if tab.Type() != lua.LTTable {
 		return v
@@ -101,7 +102,8 @@ func newRouter(co *lua.LState, tab lua.LValue) *vRouter {
 
 func newLuaRouter(co *lua.LState) int {
 	r := newRouter(co, co.CheckAny(1))
-	co.D = r
+	ctx := co.WithValue(router_context_key, r)
+	co.SetContext(ctx)
 	co.Push(r)
 	return 1
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/valyala/fasthttp"
+	"github.com/vela-security/vela-public/kind"
 	"github.com/vela-security/vela-public/lua"
 	region "github.com/vela-security/vela-region"
 	"os"
@@ -54,11 +55,12 @@ var (
 )
 
 func checkRouter(L *lua.LState) (*vRouter, error) {
-	if L.D == nil {
+	v := L.Value(router_context_key)
+	if v == nil {
 		return nil, notFoundRouter
 	}
 
-	r, ok := L.D.(*vRouter)
+	r, ok := v.(*vRouter)
 	if !ok {
 		return nil, invalidRouter
 	}
@@ -67,12 +69,14 @@ func checkRouter(L *lua.LState) (*vRouter, error) {
 }
 
 func checkRequestCtx(L *lua.LState) *RequestCtx {
-	if L.D == nil {
+
+	v := L.Value(web_context_key)
+	if v == nil {
 		L.RaiseError("invalid request context")
 		return nil
 	}
 
-	ctx, ok := L.D.(*RequestCtx)
+	ctx, ok := v.(*RequestCtx)
 	if !ok {
 		return nil
 	}
@@ -119,9 +123,34 @@ func checkOutputSdk(L *lua.LState, val lua.LValue) lua.Writer {
 	return nil
 }
 
+func PrepareDictJson(L *lua.LState) func(ctx *RequestCtx) []byte {
+	n := L.GetTop()
+	if n < 2 {
+		return func(ctx *RequestCtx) []byte {
+			return nil
+		}
+	}
+
+	var fileds []string
+
+	for i := 2; i <= n; i++ {
+		fileds = append(fileds, L.CheckString(i))
+	}
+
+	return func(ctx *RequestCtx) []byte {
+		enc := kind.NewJsonEncoder()
+		enc.Tab("")
+		for _, key := range fileds {
+			enc.KV(key, k2v(ctx, key).String())
+		}
+		enc.End("}")
+		return enc.Bytes()
+	}
+}
+
 func compileAccessFormat(format string, val string) func(ctx *RequestCtx) []byte {
 	if len(val) == 0 {
-		return nil
+		val = defaultAccessJsonFormat
 	}
 
 	switch format {
@@ -271,5 +300,19 @@ func compileHandleBody(data string) func(*RequestCtx) error {
 	return func(ctx *RequestCtx) error {
 		cnn.Response(ctx)
 		return nil
+	}
+}
+
+func setUserValueByMap(tab map[string]string, ctx *RequestCtx) {
+	if len(tab) == 0 {
+		return
+	}
+
+	for k, v := range tab {
+		if v[0] == '$' {
+			ctx.SetUserValue(k, k2v(ctx, v[1:]).String())
+			continue
+		}
+		ctx.SetUserValue(k, v)
 	}
 }

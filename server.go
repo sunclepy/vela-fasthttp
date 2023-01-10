@@ -3,6 +3,7 @@ package fasthttp
 import (
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/reuseport"
+	"github.com/vela-security/vela-public/auxlib"
 	"github.com/vela-security/vela-public/lua"
 	"net"
 	"os"
@@ -50,6 +51,9 @@ func (fss *server) Close() error {
 
 	routerPool.clear(fss.cfg.router)
 	handlePool.clear(fss.cfg.handler)
+	if fss.fs == nil {
+		goto done
+	}
 
 	if e := fss.fs.Shutdown(); e != nil {
 		xEnv.Errorf("%s web close error %v", fss.Name(), e)
@@ -57,15 +61,28 @@ func (fss *server) Close() error {
 		return e
 	}
 
+done:
 	fss.V(lua.PTClose)
 	return nil
 }
 
 func (fss *server) Listen() (net.Listener, error) {
-	if fss.cfg.reuseport == "on" {
-		return reuseport.Listen(fss.cfg.bind.Scheme(), fss.cfg.bind.Host())
+	var network, address string
+
+	network = fss.cfg.bind.Scheme()
+	switch network {
+	case "unix", "pipe":
+		address = fss.cfg.bind.Path()
+	default:
+		address = fss.cfg.bind.Host()
+
 	}
-	return net.Listen(fss.cfg.bind.Scheme(), fss.cfg.bind.Host())
+
+	if fss.cfg.reuseport == "on" {
+		return reuseport.Listen(network, address)
+	}
+
+	return net.Listen(network, address)
 }
 
 func (fss *server) keepalive() bool {
@@ -81,32 +98,12 @@ func (fss *server) notFoundBody(ctx *RequestCtx) {
 }
 
 func (fss *server) notFound(ctx *RequestCtx) {
-	if fss.cfg.notFound == "" {
+	if fss.cfg.r == nil {
 		fss.notFoundBody(ctx)
 		return
 	}
-	var r *vRouter
-	var err error
 
-	item := fss.vhost.Get(fss.cfg.notFound)
-	if item != nil {
-		r = item.val.(*vRouter)
-		goto done
-	}
-
-	r, err = requireRouter(fss.cfg.router, fss.cfg.handler, fss.cfg.notFound)
-	if err != nil {
-		if os.IsNotExist(err) {
-			fss.notFoundBody(ctx)
-			return
-		}
-		fss.invalid(ctx, err)
-		return
-	}
-
-done:
-	r.r.Handler(ctx)
-
+	fss.cfg.r.do(ctx)
 }
 
 func (fss *server) invalid(ctx *RequestCtx, err error) {
@@ -130,7 +127,11 @@ done:
 	}
 
 	ip := k2v(ctx, region).String()
-	if len(ip) < 7 {
+	if auxlib.Ipv6(ip) || auxlib.Ipv4(ip) {
+		ctx.SetUserValue(usr_addr_key, ip)
+	}
+
+	if !auxlib.Ipv4(ip) {
 		return
 	}
 
@@ -199,10 +200,22 @@ func (fss *server) require(ctx *RequestCtx) (*vRouter, error) {
 	return requireRouter(fss.cfg.router, fss.cfg.handler, host)
 }
 
+func (fss *server) setUserValue(r *vRouter, ctx *RequestCtx) {
+	if r != nil {
+		setUserValueByMap(r.variables, ctx)
+	}
+
+	setUserValueByMap(fss.cfg.variables, ctx)
+}
+
 func (fss *server) Handler(ctx *RequestCtx) {
+	ctx.SetUserValue(web_conf_key, fss.cfg)
+
 	r, err := fss.require(ctx)
 	//是否获取IP地址位置信息
 	fss.Region(r, ctx)
+
+	fss.setUserValue(r, ctx)
 
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -239,7 +252,10 @@ func (fss *server) Start() error {
 		CloseOnShutdown: true,
 	}
 	fss.ln = ln
-	xEnv.Spawn(2, func() { err = fss.fs.Serve(ln) })
+	go func() {
+		err = fss.fs.Serve(ln)
+	}()
 
-	return nil
+	time.Sleep(500 * time.Millisecond)
+	return err
 }

@@ -36,8 +36,14 @@ func (fsc *fsContext) Index(co *lua.LState, key string) lua.LValue {
 	switch key {
 	case "json":
 		return fsc.sayJson
+	case "clone":
+		return fsc.clone
 	case "say":
 		return fsc.say
+	case "raw":
+		return fsc.sayRaw
+	case "file":
+		return fsc.sayFile
 	case "append":
 		return fsc.append
 	case "exit":
@@ -46,9 +52,12 @@ func (fsc *fsContext) Index(co *lua.LState, key string) lua.LValue {
 		return fsc.eof
 	case "redirect":
 		return fsc.rdt
-	case "req_header":
+	case "format":
+		return fsc.format
+
+	case "req_header", "rqh":
 		return fsc.rqh
-	case "resp_header":
+	case "resp_header", "rph":
 		return fsc.rph
 	case "try":
 		return fsc.try

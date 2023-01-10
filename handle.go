@@ -3,6 +3,7 @@ package fasthttp
 import (
 	"errors"
 	"github.com/valyala/fasthttp"
+	cond "github.com/vela-security/vela-cond"
 	"github.com/vela-security/vela-public/lua"
 	"sync/atomic"
 )
@@ -27,10 +28,7 @@ type handle struct {
 
 	//业务字段
 	count  uint32
-	filter *filter
-
-	//匹配
-	match  func(string) bool
+	cnd    *cond.Cond
 	method string
 
 	//返回包处理
@@ -70,14 +68,18 @@ func (hd *handle) Match(v string) bool {
 	return hd.name == v
 }
 
+func (hd *handle) filter(ctx *RequestCtx) bool {
+	if hd.cnd == nil {
+		return true
+	}
+
+	return hd.cnd.Match(ctx)
+}
+
 func (hd *handle) do(co *lua.LState, ctx *RequestCtx, eof *bool) error {
 	atomic.AddUint32(&hd.count, 1)
 
-	if hd.filter == nil {
-		goto set
-	}
-
-	if hd.filter.do(ctx) {
+	if hd.filter(ctx) {
 		goto set
 	}
 
@@ -141,7 +143,7 @@ func (hc *HandleChains) Store(v interface{}, mask handleType, offset int) {
 	hc.mask[offset] = mask
 }
 
-//没有匹配的Handle代码
+// 没有匹配的Handle代码
 var notFoundBody = []byte("not found handle")
 
 func (hc *HandleChains) notFound(ctx *RequestCtx) {
